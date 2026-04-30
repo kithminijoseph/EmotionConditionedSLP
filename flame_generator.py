@@ -1,5 +1,5 @@
 """
-example usage:
+USAGE:
 python flame_generator.py train \
   --flame_dir flame_params_for_clips \
   --jsonl merged_records.jsonl \
