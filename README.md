@@ -1,4 +1,4 @@
-The following repository contains the files used to create an emotion conditioned sign language production pipeline, which outputs 3D FLAME avatars. The raw clips from Boston ASLLRP's corpus have been cropped and uploaded here, however it should be noted these clips are the intellectual property of the ASLLRP project. 
+The following repository contains the files used to create an emotion conditioned sign language production pipeline, which outputs 3D FLAME avatars. The raw clips from Boston ASLLRP's corpus have been cropped and uploaded here, however it should be noted these clips are the intellectual property of Boston University. 
 
 Additionally clip annotations from ASLLRP and emotion labels from the EmoSign dataset have been parsed here into `merged_records.jsonl` for ease, but these can be found on HuggingFace and ASLLRP. ASLLRP Data Access Interface: http://www.bu.edu/asllrp/. EmoSign: https://huggingface.co/datasets/catfang/emosign.
 
