@@ -728,7 +728,7 @@ def create_training_data(flame_dir: str, jsonl_path: str, output_path: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Extract FLAME parameters (NO PyTorch3D!)")
+    parser = argparse.ArgumentParser(description="Extract FLAME parameters")
     
     parser.add_argument('--video', type=str, help='Single video file')
     parser.add_argument('--video_dir', type=str, help='Directory of videos')
