@@ -1,53 +1,14 @@
 #!/usr/bin/env python3
 """
-FLAME Generator Ablation Study & Evaluation Framework
-======================================================
-
-Complete evaluation suite for dissertation results section including:
-
-1. ABLATION STUDIES:
-   - Text only (baseline)
-   - Text + Emotion
-   - Text + NMF  
-   - Text + NMF + Emotion (full model)
-
-2. RECONSTRUCTION METRICS (per literature):
-   - L1/L2 Error (MSE, MAE, RMSE)
-   - Pearson Correlation
-   - Per-component: Expression, Jaw, Eye, Head Orientation
-   - Per-region: Mouth, Lips, Brows, Eyes, Cheeks
-
-3. TEMPORAL QUALITY METRICS:
-   - Velocity Error (1st derivative)
-   - Acceleration Error (2nd derivative)
-   - Jerk (3rd derivative) - motion smoothness
-   - Peak Jerk / Area Under Jerk curve
-   - Smoothness Ratio (pred vs target)
-
-4. ADDITIONAL ANALYSIS:
-   - Parameter distribution comparison
-   - Dynamic range analysis
-   - Emotion responsiveness analysis
-   - NMF control fidelity
-   - Cross-sample consistency
-
-5. VISUALIZATIONS:
-   - Ablation comparison bar charts
-   - Per-component error breakdown
-   - Time series comparisons
-   - Violin plots for distributions
-   - Correlation matrices
-   - LaTeX tables for dissertation
-
-Usage:
-    # Step 1: Train ablation models (run separately for each condition)
-    python run_ablation_study.py train_ablation --flame_dir flame_params --jsonl merged.jsonl --output_dir ablation_study
+USAGE:
+    # Step 1: Train ablation models
+    python ablation_comparison.py train_ablation --flame_dir flame_params --jsonl merged_records.jsonl --output_dir ablation_study
     
     # Step 2: Evaluate all conditions
-    python run_ablation_study.py evaluate --ablation_dir ablation_study --output_dir results
+    python ablation_comparison.py evaluate --ablation_dir ablation_study --output_dir results
     
     # Step 3: Generate dissertation figures
-    python run_ablation_study.py figures --results_dir results --output_dir dissertation_figures
+    python ablation_comparison.py figures --results_dir results --output_dir dissertation_figures
 """
 
 import argparse
@@ -63,11 +24,6 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 warnings.filterwarnings('ignore')
-
-# =============================================================================
-# Optional Dependencies
-# =============================================================================
-
 try:
     import torch
     import torch.nn as nn
@@ -108,11 +64,6 @@ try:
 except ImportError:
     HAS_PANDAS = False
 
-
-# =============================================================================
-# Constants (matching flame_generator_v9.py)
-# =============================================================================
-
 N_EXPRESSION = 100
 N_JAW = 3
 N_EYE = 6
@@ -140,7 +91,7 @@ PARAM_SLICES = {
     'global_orient': (109, 112),
 }
 
-# Expression region indices (semantic groupings based on FLAME topology)
+# Expression region indices
 EXPRESSION_REGIONS = {
     'mouth_open': [0, 1, 2, 3, 4],           # Jaw/mouth opening
     'smile_frown': [10, 11, 12, 13],          # Smile left/right, frown left/right
@@ -173,14 +124,8 @@ CONDITION_COLORS = {
     'full_model': '#d62728',
 }
 
-
-# =============================================================================
-# Metric Dataclasses
-# =============================================================================
-
 @dataclass
 class ReconstructionMetrics:
-    """Reconstruction quality metrics."""
     # Overall
     mse: float = 0.0
     mae: float = 0.0
@@ -218,7 +163,6 @@ class ReconstructionMetrics:
 
 @dataclass
 class TemporalMetrics:
-    """Temporal quality metrics (motion dynamics)."""
     # Velocity (1st derivative)
     velocity_mse: float = 0.0
     velocity_mae: float = 0.0
@@ -248,7 +192,6 @@ class TemporalMetrics:
 
 @dataclass
 class DistributionMetrics:
-    """Parameter distribution metrics."""
     # Expression statistics
     expr_mean_range: float = 0.0        # Mean per-dimension range
     expr_std: float = 0.0               # Mean per-dimension std
@@ -266,7 +209,6 @@ class DistributionMetrics:
 
 @dataclass
 class ControlMetrics:
-    """Control signal fidelity metrics."""
     # NMF control accuracy
     nmf_mouth_open_corr: float = 0.0    # Correlation between nmf mouth_open and jaw
     nmf_mouth_spread_corr: float = 0.0  # Correlation between nmf mouth_spread and smile
@@ -279,7 +221,6 @@ class ControlMetrics:
 
 @dataclass
 class SampleResult:
-    """Complete metrics for a single sample."""
     clip_id: str
     duration: int
     condition: str = ''
@@ -288,13 +229,7 @@ class SampleResult:
     distribution: DistributionMetrics = field(default_factory=DistributionMetrics)
     control: ControlMetrics = field(default_factory=ControlMetrics)
 
-
-# =============================================================================
-# Metric Computation Functions  
-# =============================================================================
-
 def safe_corrcoef(x: np.ndarray, y: np.ndarray) -> float:
-    """Compute correlation coefficient safely."""
     x_flat = x.flatten()
     y_flat = y.flatten()
     if len(x_flat) < 2 or np.std(x_flat) < 1e-8 or np.std(y_flat) < 1e-8:
@@ -303,13 +238,6 @@ def safe_corrcoef(x: np.ndarray, y: np.ndarray) -> float:
 
 
 def compute_reconstruction_metrics(pred: np.ndarray, target: np.ndarray) -> ReconstructionMetrics:
-    """
-    Compute all reconstruction quality metrics.
-    
-    Args:
-        pred: (T, 112) predicted FLAME parameters
-        target: (T, 112) ground truth FLAME parameters
-    """
     metrics = ReconstructionMetrics()
     
     # Align lengths
@@ -356,12 +284,6 @@ def compute_reconstruction_metrics(pred: np.ndarray, target: np.ndarray) -> Reco
 
 
 def compute_temporal_metrics(pred: np.ndarray, target: np.ndarray, fps: float = 30.0) -> TemporalMetrics:
-    """
-    Compute temporal quality metrics (velocity, acceleration, jerk).
-    
-    Jerk = d³x/dt³ measures motion smoothness. Lower jerk = smoother motion.
-    Peak jerk indicates worst-case jerkiness.
-    """
     metrics = TemporalMetrics()
     
     T = min(len(pred), len(target))
@@ -421,7 +343,6 @@ def compute_temporal_metrics(pred: np.ndarray, target: np.ndarray, fps: float = 
 
 
 def compute_distribution_metrics(pred: np.ndarray, target: np.ndarray) -> DistributionMetrics:
-    """Compute parameter distribution metrics."""
     metrics = DistributionMetrics()
     
     T = min(len(pred), len(target))
@@ -468,12 +389,7 @@ def compute_distribution_metrics(pred: np.ndarray, target: np.ndarray) -> Distri
     return metrics
 
 
-def compute_control_metrics(
-    pred: np.ndarray, 
-    nmf: np.ndarray, 
-    emotions: np.ndarray
-) -> ControlMetrics:
-    """Compute control signal fidelity metrics."""
+def compute_control_metrics(pred: np.ndarray, nmf: np.ndarray, emotions: np.ndarray) -> ControlMetrics:
     metrics = ControlMetrics()
     
     T = min(len(pred), len(nmf))
@@ -519,13 +435,7 @@ def compute_control_metrics(
     return metrics
 
 
-def evaluate_single_sample(
-    pred_path: Path,
-    target_path: Path,
-    condition: str = '',
-    fps: float = 30.0
-) -> SampleResult:
-    """Evaluate a single sample with all metrics."""
+def evaluate_single_sample(pred_path: Path, target_path: Path, condition: str = '', fps: float = 30.0) -> SampleResult:
     
     pred_data = np.load(pred_path, allow_pickle=True)
     target_data = np.load(target_path, allow_pickle=True)
@@ -562,14 +472,7 @@ def evaluate_single_sample(
     
     return result
 
-
-# =============================================================================
-# Aggregation Functions
-# =============================================================================
-
 def aggregate_results(results: List[SampleResult]) -> Dict[str, Any]:
-    """Aggregate metrics across all samples with mean, std, median, min, max."""
-    
     if not results:
         return {}
     
@@ -626,22 +529,7 @@ def aggregate_results(results: List[SampleResult]) -> Dict[str, Any]:
     
     return agg
 
-
-# =============================================================================
-# Ablation Study Training
-# =============================================================================
-
 def create_ablation_generator(condition: str, base_config: Dict):
-    """
-    Create a modified generator for ablation study.
-    
-    For ablation, we need modified versions of the generator that:
-    - text_only: Zero out NMF and emotion inputs
-    - text_emotion: Zero out NMF inputs
-    - text_nmf: Zero out emotion inputs
-    - full_model: Use all inputs (baseline)
-    """
-    
     cfg = ABLATION_CONDITIONS[condition]
     
     # This returns a wrapper that modifies inputs during forward pass
@@ -663,21 +551,7 @@ def create_ablation_generator(condition: str, base_config: Dict):
     return AblationWrapper(cfg['use_emotion'], cfg['use_nmf'])
 
 
-def train_ablation_models(
-    flame_dir: str,
-    jsonl_path: str,
-    output_dir: str,
-    epochs: int = 150,
-    seed: int = 42,
-    conditions: List[str] = None
-):
-    """
-    Train models for each ablation condition.
-    
-    This creates separate checkpoints for each condition, all using
-    the same train/test split for fair comparison.
-    """
-    
+def train_ablation_models(flame_dir: str, jsonl_path: str, output_dir: str, epochs: int = 150, seed: int = 42, conditions: List[str] = None):
     if not HAS_TORCH:
         print("ERROR: PyTorch required for training")
         return
@@ -849,12 +723,7 @@ def train_ablation_models(
     print(f"{'='*60}")
 
 
-def run_ablation_reconstruction(
-    ablation_dir: str,
-    conditions: List[str] = None
-):
-    """Run reconstruction for all ablation conditions."""
-    
+def run_ablation_reconstruction(ablation_dir: str, conditions: List[str] = None):
     if not HAS_TORCH:
         print("ERROR: PyTorch required")
         return
@@ -871,15 +740,15 @@ def run_ablation_reconstruction(
     # Import generator
     try:
         import importlib.util
-        gen_path = Path(__file__).parent / 'flame_generator_v9.py'
+        gen_path = Path(__file__).parent / 'flame_generator.py'
         if not gen_path.exists():
-            gen_path = Path('flame_generator_v9.py')
+            gen_path = Path('flame_generator.py')
         
-        spec = importlib.util.spec_from_file_location("flame_generator_v9", gen_path)
+        spec = importlib.util.spec_from_file_location("flame_generator", gen_path)
         gen_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(gen_module)
     except Exception as e:
-        print(f"ERROR: Could not import flame_generator_v9.py: {e}")
+        print(f"ERROR: Could not import flame_generator.py: {e}")
         return
     
     device = gen_module.pick_device()
@@ -972,18 +841,8 @@ def run_ablation_reconstruction(
         
         print(f"  Reconstructed {len(files)} samples to {recon_dir}")
 
+def evaluate_ablation_study(ablation_dir: str, output_dir: str, conditions: List[str] = None) -> Dict[str, Dict]:
 
-# =============================================================================
-# Evaluation Pipeline
-# =============================================================================
-
-def evaluate_ablation_study(
-    ablation_dir: str,
-    output_dir: str,
-    conditions: List[str] = None
-) -> Dict[str, Dict]:
-    """Evaluate all ablation conditions and generate comparison."""
-    
     ablation_dir = Path(ablation_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1077,18 +936,7 @@ def evaluate_ablation_study(
     
     return all_results, all_sample_results
 
-
-# =============================================================================
-# Visualization Functions
-# =============================================================================
-
-def generate_all_figures(
-    results_dir: str,
-    output_dir: str,
-    conditions: List[str] = None
-):
-    """Generate all dissertation figures."""
-    
+def generate_all_figures(results_dir: str, output_dir: str, conditions: List[str] = None):
     if not HAS_MATPLOTLIB:
         print("ERROR: matplotlib required for figures")
         return
@@ -1133,16 +981,12 @@ def generate_all_figures(
     
     # Figure 6: Combined summary figure
     fig6_summary(all_results, conditions, output_dir)
-    
-    # Generate LaTeX tables
-    generate_latex_tables(all_results, conditions, output_dir)
+
     
     print(f"\nAll figures saved to: {output_dir}")
 
 
 def fig1_overall_mse(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 1: Overall reconstruction error comparison."""
-    
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     
     # MSE comparison
@@ -1187,7 +1031,6 @@ def fig1_overall_mse(results: Dict, conditions: List[str], output_dir: Path):
 
 
 def fig2_component_breakdown(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 2: Per-component error breakdown."""
     
     components = ['expression', 'jaw_pose', 'eye_pose', 'global_orient']
     comp_labels = ['Expression\n(100D)', 'Jaw Pose\n(3D)', 'Eye Pose\n(6D)', 'Head Orient\n(3D)']
@@ -1218,7 +1061,6 @@ def fig2_component_breakdown(results: Dict, conditions: List[str], output_dir: P
 
 
 def fig3_temporal_quality(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 3: Temporal quality metrics."""
     
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     
@@ -1258,7 +1100,6 @@ def fig3_temporal_quality(results: Dict, conditions: List[str], output_dir: Path
 
 
 def fig4_regional_error(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 4: Regional expression error breakdown."""
     
     regions = ['mouth_open', 'smile_frown', 'lips', 'brows', 'eyes_expr', 'cheeks', 'nose']
     region_labels = ['Mouth\nOpen', 'Smile/\nFrown', 'Lips', 'Brows', 'Eyes', 'Cheeks', 'Nose']
@@ -1288,8 +1129,6 @@ def fig4_regional_error(results: Dict, conditions: List[str], output_dir: Path):
 
 
 def fig5_control_fidelity(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 5: NMF control fidelity."""
-    
     # Only show conditions that use NMF
     nmf_conditions = [c for c in conditions if ABLATION_CONDITIONS[c]['use_nmf']]
     
@@ -1327,8 +1166,6 @@ def fig5_control_fidelity(results: Dict, conditions: List[str], output_dir: Path
 
 
 def fig6_summary(results: Dict, conditions: List[str], output_dir: Path):
-    """Figure 6: Combined summary figure for dissertation."""
-    
     fig = plt.figure(figsize=(16, 12))
     gs = GridSpec(2, 3, figure=fig, hspace=0.3, wspace=0.3)
     
@@ -1412,89 +1249,6 @@ def fig6_summary(results: Dict, conditions: List[str], output_dir: Path):
     plt.savefig(output_dir / 'fig6_summary.pdf', bbox_inches='tight')
     plt.close()
     print("  Saved: fig6_summary.png/pdf")
-
-
-def generate_latex_tables(results: Dict, conditions: List[str], output_dir: Path):
-    """Generate LaTeX tables for dissertation."""
-    
-    # Table 1: Overall reconstruction metrics
-    table1 = r"""
-\begin{table}[htbp]
-\centering
-\caption{Ablation Study: Reconstruction Quality Metrics}
-\label{tab:ablation_reconstruction}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Condition} & \textbf{MSE} $\downarrow$ & \textbf{MAE} $\downarrow$ & \textbf{RMSE} $\downarrow$ & \textbf{Correlation} $\uparrow$ \\
-\midrule
-"""
-    for cond in conditions:
-        r = results[cond]
-        label = CONDITION_LABELS[cond].replace('\n', ' ')
-        table1 += f"{label} & {r.get('recon_mse_mean', 0):.4f} & {r.get('recon_mae_mean', 0):.4f} & {r.get('recon_rmse_mean', 0):.4f} & {r.get('recon_correlation_mean', 0):.3f} \\\\\n"
-    
-    table1 += r"""\bottomrule
-\end{tabular}
-\end{table}
-"""
-    
-    with open(output_dir / 'table1_reconstruction.tex', 'w') as f:
-        f.write(table1)
-    
-    # Table 2: Per-component metrics
-    table2 = r"""
-\begin{table}[htbp]
-\centering
-\caption{Per-Component MSE by Ablation Condition}
-\label{tab:ablation_components}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Condition} & \textbf{Expression} & \textbf{Jaw Pose} & \textbf{Eye Pose} & \textbf{Head Orient} \\
-\midrule
-"""
-    for cond in conditions:
-        r = results[cond]
-        label = CONDITION_LABELS[cond].replace('\n', ' ')
-        table2 += f"{label} & {r.get('recon_mse_expression_mean', 0):.4f} & {r.get('recon_mse_jaw_pose_mean', 0):.4f} & {r.get('recon_mse_eye_pose_mean', 0):.4f} & {r.get('recon_mse_global_orient_mean', 0):.4f} \\\\\n"
-    
-    table2 += r"""\bottomrule
-\end{tabular}
-\end{table}
-"""
-    
-    with open(output_dir / 'table2_components.tex', 'w') as f:
-        f.write(table2)
-    
-    # Table 3: Temporal metrics
-    table3 = r"""
-\begin{table}[htbp]
-\centering
-\caption{Temporal Quality Metrics by Ablation Condition}
-\label{tab:ablation_temporal}
-\begin{tabular}{lcccc}
-\toprule
-\textbf{Condition} & \textbf{Velocity MSE} $\downarrow$ & \textbf{Accel MSE} $\downarrow$ & \textbf{Mean Jerk} $\downarrow$ & \textbf{Peak Jerk} $\downarrow$ \\
-\midrule
-"""
-    for cond in conditions:
-        r = results[cond]
-        label = CONDITION_LABELS[cond].replace('\n', ' ')
-        table3 += f"{label} & {r.get('temporal_velocity_mse_mean', 0):.4f} & {r.get('temporal_accel_mse_mean', 0):.4f} & {r.get('temporal_jerk_mean_pred_mean', 0):.2f} & {r.get('temporal_jerk_peak_pred_mean', 0):.2f} \\\\\n"
-    
-    table3 += r"""\bottomrule
-\end{tabular}
-\end{table}
-"""
-    
-    with open(output_dir / 'table3_temporal.tex', 'w') as f:
-        f.write(table3)
-    
-    print("  Saved LaTeX tables: table1_reconstruction.tex, table2_components.tex, table3_temporal.tex")
-
-
-# =============================================================================
-# Main CLI
-# =============================================================================
 
 def main():
     parser = argparse.ArgumentParser(description="FLAME Generator Ablation Study & Evaluation")

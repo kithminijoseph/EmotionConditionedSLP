@@ -14,6 +14,8 @@ Once you run an inference or novel generation you will generate a `.npz` file. T
 
 Additionally, files used for hyperparameter tuning: `hyperparam_tuning.py` and the ablation comparison overall: `ablation_comparison.py` and per sample `per_sample_ablation_comparison.py` are given below as well as the folders with the results and k fold splits for the ablation.
 
+It is advised to train this model on Hex or a GPU.
+
 ## References
 
 If you use this repository, please cite the original datasets and resources:
